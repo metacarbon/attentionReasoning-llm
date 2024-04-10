@@ -247,8 +247,9 @@ class LlamaAttention(nn.Module):
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
-        
-        self.first_layer_mask = None
+        self.alpha = 0.2
+        self.boosting_self = False
+
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
             raise ValueError(
@@ -300,6 +301,7 @@ class LlamaAttention(nn.Module):
         output_attentions: bool = False,
         use_cache: bool = False,
         layer_id: Optional[int] = 0,
+        top_layer_mask: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         bsz, q_len, _ = hidden_states.size()
 
@@ -366,16 +368,19 @@ class LlamaAttention(nn.Module):
         
         if layer_id == 0:
             # mask out attention weights which are less than 0.01
-            self.first_layer_mask = (attn_weights > 0.01)
+            top_layer_mask = (attn_weights > 0.01)
             if attn_weights.shape[-2] != 1:
                 identity_matrix = torch.eye(kv_seq_len, kv_seq_len, dtype=torch.bool).to(attn_weights.device)
-                expanded_identity_matrix = identity_matrix.unsqueeze(0).unsqueeze(0).expand_as(self.first_layer_mask)
-                self.first_layer_mask = self.first_layer_mask & ~expanded_identity_matrix
+                expanded_identity_matrix = identity_matrix.unsqueeze(0).unsqueeze(0).expand_as(top_layer_mask)
+                top_layer_mask = top_layer_mask & ~expanded_identity_matrix
             else:
-                self.first_layer_mask[..., -1] = False
+                top_layer_mask[..., -1] = False
         else:
             # re-balance attention weights for downstream layers
-            attn_weights[self.first_layer_mask] *= (1.0 + 0.5 * (1.0 - layer_id/31))  # last layer idx is 31 for LLaMA-7B
+            if not self.boosting_self:
+                attn_weights[top_layer_mask] *= (1.0 + self.alpha * (1.0 - layer_id/31))  # last layer idx is 31 for LLaMA-7B
+            else:
+                attn_weights *= (1.0 + self.alpha * (1.0 - layer_id/31))
         
         attn_output = torch.matmul(attn_weights, value_states)
 
@@ -398,7 +403,7 @@ class LlamaAttention(nn.Module):
         if not output_attentions:
             attn_weights = None
 
-        return attn_output, attn_weights, past_key_value
+        return attn_output, attn_weights, past_key_value, top_layer_mask
 
 
 class LlamaDecoderLayer(nn.Module):
@@ -419,6 +424,7 @@ class LlamaDecoderLayer(nn.Module):
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         layer_id: Optional[int] = 0,
+        top_layer_mask: Optional[torch.Tensor] = None
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
         Args:
@@ -439,7 +445,7 @@ class LlamaDecoderLayer(nn.Module):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, self_attn_weights, present_key_value, top_layer_mask = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -447,6 +453,7 @@ class LlamaDecoderLayer(nn.Module):
             output_attentions=output_attentions,
             use_cache=use_cache,
             layer_id=layer_id,
+            top_layer_mask=top_layer_mask,
         )
         hidden_states = residual + hidden_states
 
@@ -464,7 +471,7 @@ class LlamaDecoderLayer(nn.Module):
         if use_cache:
             outputs += (present_key_value,)
 
-        return outputs
+        return outputs, top_layer_mask
 
 
 LLAMA_START_DOCSTRING = r"""
@@ -595,6 +602,8 @@ class LlamaModel(LlamaPreTrainedModel):
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = nn.ModuleList([LlamaDecoderLayer(config) for _ in range(config.num_hidden_layers)])
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        # set the top layer mask
+        self.first_layer_mask = None
 
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
@@ -724,15 +733,27 @@ class LlamaModel(LlamaPreTrainedModel):
                     position_ids,
                 )
             else:
-                layer_outputs = decoder_layer(
-                    hidden_states,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    past_key_value=past_key_value,
-                    output_attentions=output_attentions,
-                    use_cache=use_cache,
-                    layer_id=idx,
-                )
+                if idx == 0:
+                    layer_outputs, self.first_layer_mask = decoder_layer(
+                        hidden_states,
+                        attention_mask=attention_mask,
+                        position_ids=position_ids,
+                        past_key_value=past_key_value,
+                        output_attentions=output_attentions,
+                        use_cache=use_cache,
+                        layer_id=idx
+                    )
+                else:
+                    layer_outputs, _ = decoder_layer(
+                        hidden_states,
+                        attention_mask=attention_mask,
+                        position_ids=position_ids,
+                        past_key_value=past_key_value,
+                        output_attentions=output_attentions,
+                        use_cache=use_cache,
+                        layer_id=idx,
+                        top_layer_mask=self.first_layer_mask
+                    )
 
             hidden_states = layer_outputs[0]
 
