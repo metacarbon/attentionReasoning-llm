@@ -1,8 +1,8 @@
-# Attention-Driven Reasoning: Unlocking the Potential of Large Language Models 
+# Extending Token Computation for LLM Reasoning 
 [[paper](http://arxiv.org/abs/2403.14932)]
 
 ## Abstract
-Large Language Models (LLMs) have shown remarkable capabilities, but their reasoning abilities and underlying mechanisms remain poorly understood. We present a novel approach to enhance LLMs’ reasoning through attention mechanism optimization, without additional training data. We identify inefficiencies in the attention distribution caused by non-semantic tokens and propose an algorithm to re-balance the skewed distribution, enabling the model to abstract more nuanced knowledge. Our experiments demonstrate significantly improved reasoning capabilities, particularly for non-STEM questions. We provide insights into the role of attention patterns in LLMs’ reasoning and propose a method to enhance these abilities, paving the way for more powerful and versatile language models.
+Large Language Models (LLMs) are pivotal in advancing natural language processing but often struggle with complex reasoning tasks due to inefficient attention distributions. In this paper, we explore the effect of increased computed tokens on LLM performance and introduce a novel method for extending computed tokens in the Chain-of-Thought (CoT) process, utilizing attention mechanism optimization. By fine-tuning an LLM on a domain-specific, highly structured dataset, we analyze attention patterns across layers, identifying inefficiencies caused by non-semantic tokens with outlier high attention scores. To address this, we propose an algorithm that emulates early layer attention patterns across downstream layers to re-balance skewed attention distributions and enhance knowledge abstraction. Our findings demonstrate that our approach not only facilitates a deeper understanding of the internal dynamics of LLMs but also significantly improves their reasoning capabilities, particularly in non-STEM domains. Our study lays the groundwork for further innovations in LLM design, aiming to create more powerful, versatile, and responsible models capable of tackling a broad range of real-world applications.
 
 ## Usage
 
@@ -30,8 +30,8 @@ Please note that the MMLU test script uses regex to extract the answer generated
 If you find our works useful or relevant to your project and research, please kindly cite our paper:
 
 ```bibtex
-@article{liao2024attentiondriven,
-        title={Attention-Driven Reasoning: Unlocking the Potential of Large Language Models},
+@article{liao2024extending,
+        title={Extending Token Computation for LLM Reasoning},
         author={Bingli Liao and Danilo Vasconcellos Vargas},
         journal={arXiv},
         year={2024}
