@@ -73,12 +73,32 @@ TASK_NAME_MAPPING = {
     ],
 }
 
+TASK_NAME_MAPPING = {
+    "Humanities": [
+        "formal_logic",
+        "high_school_european_history",
+        "high_school_us_history",
+        "high_school_world_history",
+        "international_law",
+        "jurisprudence",
+        "logical_fallacies",
+        "moral_disputes",
+        "moral_scenarios",
+        "philosophy",
+        "prehistory",
+        "professional_law",
+        "world_religions",
+    ],
+}
+
 SUBJECTS = [v for vl in TASK_NAME_MAPPING.values() for v in vl]
 choices = ["A", "B", "C", "D"]
+SIQA_choices = ["A", "B", "C"]
+PIQA_choices = ["A", "B"]
 
 
 def load(model_name_or_path):
-    print(f"Loading model from {model_name_or_path} ...")
+    
     tokenizer = AutoTokenizer.from_pretrained(
         model_name_or_path,
         trust_remote_code=True,
